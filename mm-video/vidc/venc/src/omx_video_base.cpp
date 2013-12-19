@@ -1957,29 +1957,21 @@ OMX_ERRORTYPE  omx_video::get_extension_index(OMX_IN OMX_HANDLETYPE      hComp,
                                               OMX_IN OMX_STRING      paramName,
                                               OMX_OUT OMX_INDEXTYPE* indexType)
 {
-  char *extns[] = {
-    "OMX.QCOM.index.param.SliceDeliveryMode",
-    "OMX.google.android.index.storeMetaDataInBuffers",
-    "OMX.google.android.index.prependSPSPPSToIDRFrames"
-  };
-
   if(m_state == OMX_StateInvalid)
   {
     DEBUG_PRINT_ERROR("ERROR: Get Extension Index in Invalid State\n");
     return OMX_ErrorInvalidState;
   }
 #ifdef MAX_RES_1080P
-  if (!strncmp(paramName, extns[0], strlen(extns[0]))) {
+  if (!strncmp(paramName, "OMX.QCOM.index.param.SliceDeliveryMode",
+      sizeof("OMX.QCOM.index.param.SliceDeliveryMode") - 1)) {
     *indexType = (OMX_INDEXTYPE)OMX_QcomIndexEnableSliceDeliveryMode;
     return OMX_ErrorNone;
   }
 #endif
 #ifdef _ANDROID_ICS_
-  if (!strncmp(paramName, extns[1], strlen(extns[1]))) {
+  if (!strncmp(paramName, "OMX.google.android.index.storeMetaDataInBuffers",sizeof("OMX.google.android.index.storeMetaDataInBuffers") - 1)) {
         *indexType = (OMX_INDEXTYPE)OMX_QcomIndexParamVideoEncodeMetaBufferMode;
-        return OMX_ErrorNone;
-  } else if (!strncmp(paramName, extns[2], strlen(extns[2]))) {
-        *indexType = (OMX_INDEXTYPE)OMX_QcomIndexParamSequenceHeaderWithIDR;
         return OMX_ErrorNone;
   }
 #endif
@@ -2131,7 +2123,7 @@ OMX_ERRORTYPE  omx_video::use_input_buffer(
 #ifdef USE_ION
       m_pInput_ion[i].ion_device_fd = alloc_map_ion_memory(m_sInPortDef.nBufferSize,
                                       &m_pInput_ion[i].ion_alloc_data,
-                                      &m_pInput_ion[i].fd_ion_data,ION_FLAG_CACHED);
+                                      &m_pInput_ion[i].fd_ion_data,CACHED);
       if(m_pInput_ion[i].ion_device_fd < 0) {
         DEBUG_PRINT_ERROR("\nERROR:ION device open() Failed");
         return OMX_ErrorInsufficientResources;
@@ -2330,7 +2322,7 @@ OMX_ERRORTYPE  omx_video::use_output_buffer(
         m_pOutput_ion[i].ion_device_fd = alloc_map_ion_memory(
                                          m_sOutPortDef.nBufferSize,
                                          &m_pOutput_ion[i].ion_alloc_data,
-                                         &m_pOutput_ion[i].fd_ion_data,ION_FLAG_CACHED);
+                                         &m_pOutput_ion[i].fd_ion_data,CACHED);
       if(m_pOutput_ion[i].ion_device_fd < 0) {
         DEBUG_PRINT_ERROR("\nERROR:ION device open() Failed");
         return OMX_ErrorInsufficientResources;
@@ -2747,7 +2739,7 @@ OMX_ERRORTYPE  omx_video::allocate_input_buffer(
 #ifdef USE_ION
     m_pInput_ion[i].ion_device_fd = alloc_map_ion_memory(m_sInPortDef.nBufferSize,
                                     &m_pInput_ion[i].ion_alloc_data,
-                                    &m_pInput_ion[i].fd_ion_data,ION_FLAG_CACHED);
+                                    &m_pInput_ion[i].fd_ion_data,CACHED);
     if(m_pInput_ion[i].ion_device_fd < 0) {
       DEBUG_PRINT_ERROR("\nERROR:ION device open() Failed");
       return OMX_ErrorInsufficientResources;
@@ -2906,7 +2898,7 @@ OMX_ERRORTYPE  omx_video::allocate_output_buffer(
 #ifdef USE_ION
       m_pOutput_ion[i].ion_device_fd = alloc_map_ion_memory(m_sOutPortDef.nBufferSize,
                                        &m_pOutput_ion[i].ion_alloc_data,
-                                       &m_pOutput_ion[i].fd_ion_data,ION_FLAG_CACHED);
+                                       &m_pOutput_ion[i].fd_ion_data,CACHED);
       if(m_pOutput_ion[i].ion_device_fd < 0) {
         DEBUG_PRINT_ERROR("\nERROR:ION device open() Failed");
         return OMX_ErrorInsufficientResources;
@@ -4303,7 +4295,11 @@ int omx_video::alloc_map_ion_memory(int size,struct ion_allocation_data *alloc_d
     DEBUG_PRINT_ERROR("\nInvalid input to alloc_map_ion_memory");
     return -EINVAL;
 	}
-    ion_dev_flags = O_RDONLY;
+        if(!secure_session && flag == CACHED) {
+             ion_dev_flags = O_RDONLY;
+       } else {
+             ion_dev_flags = O_RDONLY | O_DSYNC;
+        }
         ion_device_fd = open (MEM_DEVICE,ion_dev_flags);
         if(ion_device_fd < 0)
         {
@@ -4312,19 +4308,14 @@ int omx_video::alloc_map_ion_memory(int size,struct ion_allocation_data *alloc_d
         }
         alloc_data->len = size;
         alloc_data->align = 4096;
-        alloc_data->flags = 0;
-        if(!secure_session && (flag & ION_FLAG_CACHED))
-        {
-          alloc_data->flags = ION_FLAG_CACHED;
-        }
 
         if (secure_session)
-           alloc_data->heap_mask = (ION_HEAP(MEM_HEAP_ID) | ION_SECURE);
+           alloc_data->flags = (ION_HEAP(MEM_HEAP_ID) | ION_SECURE);
         else
 #ifdef MAX_RES_720P
-           alloc_data->heap_mask = ION_HEAP(MEM_HEAP_ID);
+           alloc_data->flags = ION_HEAP(MEM_HEAP_ID);
 #else
-           alloc_data->heap_mask = (ION_HEAP(MEM_HEAP_ID) |
+           alloc_data->flags = (ION_HEAP(MEM_HEAP_ID) |
                 ION_HEAP(ION_IOMMU_HEAP_ID));
 #endif
         rc = ioctl(ion_device_fd,ION_IOC_ALLOC,alloc_data);
